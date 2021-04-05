@@ -41,6 +41,25 @@ class Dataset(torch.utils.data.Dataset):
 
         return X_i, Y_i
 
+
+class Dataset2(torch.utils.data.Dataset):
+    """
+    Characterizes a dataset for PyTorch.
+    """
+    def __init__(self, X, Y, device):
+        self.X = X 
+        self.Y = Y
+        self.device = device
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, index):
+        X_i = torch.from_numpy(self.X[index]).to(self.device)
+        Y_i = torch.from_numpy(self.Y[index]).to(self.device)
+
+        return X_i, Y_i
+
+
 class KMaxPooling(nn.Module):
     """
     K-Max Pooling used as the last layer for VDCNN model implementation
@@ -119,7 +138,7 @@ class VDCNN(nn.Module):
                               nn.Linear(2048, 2048),
                               nn.ReLU(),
                               nn.Linear(2048, self.num_class),
-                              nn.Softmax(dim=1)]
+                              ]
         
     def forward(self, x):
 
@@ -145,6 +164,8 @@ def make_data(train_fname, test_fname, use_oldfile=False):
     Preprocess Yelp_review_polarity dataset and make them available for the model
     to train on. The output is numpy array
     """
+    dataset_name = train_fname.split('/')[3]
+
     # make train and test data
     if (os.path.exists('train_X.npy') and os.path.exists('train_Y.npy') and
         os.path.exists('test_X.npy') and os.path.exists('test_Y.npy') and use_oldfile):
@@ -162,20 +183,45 @@ def make_data(train_fname, test_fname, use_oldfile=False):
         train_X = np.zeros([len(train_df), 1024]).astype(int)
         test_X = np.zeros([len(test_df), 1024]).astype(int)
 
-        for i, s in enumerate(train_df.loc[:, 1]):
-            for j, c in enumerate(s.lower()):
-                train_X[i, j] = lookup_table[c]
-                if j == 1023:
-                    break
-        for i, s in enumerate(test_df.loc[:, 1]):
-            for j, c in enumerate(s.lower()):
-                test_X[i, j] = lookup_table[c]
-                if j == 1023:
-                    break
+        if dataset_name == 'yelp_review_polarity_csv':
+            for i, s in enumerate(train_df.loc[:, 1]):
+                for j, c in enumerate(s.lower()):
+                    train_X[i, j] = lookup_table[c]
+                    if j == 1023:
+                        break
+            for i, s in enumerate(test_df.loc[:, 1]):
+                for j, c in enumerate(s.lower()):
+                    test_X[i, j] = lookup_table[c]
+                    if j == 1023:
+                        break
 
-        train_Y = train_df.loc[:, 0].to_numpy() - 1 
-        test_Y = test_df.loc[:, 0].to_numpy() - 1 
+            train_Y = np.array(train_df.loc[:, 0]) - 1 
+            test_Y = np.array(test_df.loc[:, 0]) - 1 
 
+        elif dataset_name == 'yahoo_answers_csv':
+            for i, s in enumerate(train_df.loc[:, 3]):
+                for j, c in enumerate(str(s).lower()):
+                    if c not in lookup_table.keys():
+                        train_X[i, j] = 0
+                    else:
+                        train_X[i, j] = lookup_table[c]
+                    if j == 1023:
+                        break
+            for i, s in enumerate(test_df.loc[:, 3]):
+                for j, c in enumerate(str(s).lower()):
+                    if c not in lookup_table.keys():
+                        test_X[i, j] = 0
+                    else:
+                        test_X[i, j] = lookup_table[c]
+                    if j == 1023:
+                        break
+
+            train_Y = np.array(train_df.loc[:, 0]) - 1 
+            test_Y = np.array(test_df.loc[:, 0]) - 1 
+
+
+    if (~(os.path.exists('train_X.npy') and os.path.exists('train_Y.npy') and
+        os.path.exists('test_X.npy') and os.path.exists('test_Y.npy')) and use_oldfile):
         np.save('train_X', train_X)
         np.save('train_Y', train_Y)
         np.save('test_X', test_X)
@@ -193,13 +239,8 @@ def make_dataloader(train_fname, test_fname, num_workers=8, batch_size=128, use_
 
     train_X, train_Y, test_X, test_Y = make_data(train_fname, test_fname, use_oldfile)
 
-    train_X = torch.from_numpy(train_X).to(device)    
-    train_Y = torch.from_numpy(train_Y).to(device)
-    test_X = torch.from_numpy(test_X).to(device)
-    test_Y = torch.from_numpy(test_Y).to(device)
-
-    dataset_train = Dataset(train_X, train_Y)
-    dataset_test = Dataset(test_X, test_Y)
+    dataset_train = Dataset2(train_X, train_Y, device)
+    dataset_test = Dataset2(test_X, test_Y, device)
     
     dataloaders = {
         'train': DataLoader(dataset_train, batch_size, shuffle=False,
@@ -218,8 +259,13 @@ def run_model(model, dataloaders, num_epochs):
     Train and test the model with a given number of epochs. The result is saved onto
     3 log files.
     """
-    epoch_file = open(f'epoch_d{model.depth}_nc{model.num_class}_ne{num_epochs}.log', 'w')
-    short_file = open(f'short_d{model.depth}_nc{model.num_class}_ne{num_epochs}.log', 'w')
+    epoch_fname = 'epoch_d{0}_nc{1}_ne{2}.log'.format(model.depth,
+                   model.num_class, num_epochs)
+    epoch_file = open(epoch_fname, 'w')
+
+    short_fname = 'short_d{0}_nc{1}_ne{2}.log'.format(model.depth,
+                  model.num_class, num_epochs)
+    short_file = open(short_fname, 'w')
     # Record loss every minute 
     prev_time = time.time()
     mins = 0
@@ -274,9 +320,11 @@ def run_model(model, dataloaders, num_epochs):
                 if time.time()-prev_time >= 60:
                     mins += 1
                     if phase == 'train':
-                        short_file.write(f'[{phase}] {mins} minute(s): loss = {avg_loss:.5f}\n')
+                        short_file.write('[{0}] {1} minute(s): loss = {2:.5f}\n'.format(phase,
+                        mins, avg_loss))
                     if phase == 'test':
-                        short_file.write(f'[{phase}] {mins} minute(s): error % = {err_perc:.5f}\n')
+                        short_file.write('[{0}] {1} minute(s): error % = {2:.5f}\n'.format(
+                        phase, mins, err_perc))
                     prev_time = time.time()
                            
             if phase == 'train':
@@ -285,7 +333,7 @@ def run_model(model, dataloaders, num_epochs):
                 epoch_loss = err_perc
             loss_history[phase][epoch] = epoch_loss
 
-            epoch_file.write(f'{phase} Loss: {epoch_loss:.5f}\n')
+            epoch_file.write('[{0}] Loss: {1:.5f}\n'.format(phase, epoch_loss))
 
     f.close(short_file)
     f.close(epoch_file)
