@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import os, sys
 import numpy as np
-from torch.utils.data import DataLoader
 import torch.optim as optim
 import pandas as pd
 import copy
@@ -23,42 +22,6 @@ class Flatten(nn.Module):
             num_features *= s
             
         return num_features    
-
-class Dataset(torch.utils.data.Dataset):
-    """
-    Characterizes a dataset for PyTorch.
-    """
-    def __init__(self, X, Y):
-        self.X = X 
-        self.Y = Y
-
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, index):
-        X_i = self.X[index]
-        Y_i = self.Y[index]
-
-        return X_i, Y_i
-
-
-class Dataset2(torch.utils.data.Dataset):
-    """
-    Characterizes a dataset for PyTorch.
-    """
-    def __init__(self, X, Y, device):
-        self.X = X 
-        self.Y = Y
-        self.device = device
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, index):
-        X_i = torch.from_numpy(self.X[index]).to(self.device)
-        Y_i = torch.from_numpy(self.Y[index]).to(self.device)
-
-        return X_i, Y_i
-
 
 class KMaxPooling(nn.Module):
     """
@@ -142,7 +105,7 @@ class VDCNN(nn.Module):
         
     def forward(self, x):
 
-        x = self.embedding(x).view(-1, 16, 1024)
+        x = self.embedding(x).trapnspose(1, 2)
         for unit in self.conv64_block:
             x = unit(x)
         x = self.pool_half(x)
@@ -230,7 +193,7 @@ def make_data(train_fname, test_fname, use_oldfile=False):
     return train_X, train_Y, test_X, test_Y
 
 
-def make_dataloader(train_fname, test_fname, num_workers=8, batch_size=128, use_oldfile=False):
+def make_dataloader(train_fname, test_fname, batch_size=128, use_oldfile=False):
     """
     Create a dataloader which is conveniently designed for pytorch batch 
     iteration.
@@ -239,16 +202,9 @@ def make_dataloader(train_fname, test_fname, num_workers=8, batch_size=128, use_
 
     train_X, train_Y, test_X, test_Y = make_data(train_fname, test_fname, use_oldfile)
 
-    dataset_train = Dataset2(train_X, train_Y, device)
-    dataset_test = Dataset2(test_X, test_Y, device)
-    
     dataloaders = {
-        'train': DataLoader(dataset_train, batch_size, shuffle=False,
-                            pin_memory=True,
-                            num_workers=num_workers),
-        'test': DataLoader(dataset_test, batch_size, shuffle=False,
-                          pin_memory=True,
-                          num_workers=num_workers),  
+        'train': (train_X, train_Y, batch_size),
+        'test': (test_X, test_Y, batch_size),  
     }
     
     return dataloaders
@@ -259,13 +215,16 @@ def run_model(model, dataloaders, num_epochs):
     Train and test the model with a given number of epochs. The result is saved onto
     3 log files.
     """
+ 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    model = model.to(device)
+
     epoch_fname = 'epoch_d{0}_nc{1}_ne{2}.log'.format(model.depth,
                    model.num_class, num_epochs)
-    epoch_file = open(epoch_fname, 'w')
 
     short_fname = 'short_d{0}_nc{1}_ne{2}.log'.format(model.depth,
                   model.num_class, num_epochs)
-    short_file = open(short_fname, 'w')
     # Record loss every minute 
     prev_time = time.time()
     mins = 0
@@ -273,11 +232,12 @@ def run_model(model, dataloaders, num_epochs):
     optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
     criterion = nn.CrossEntropyLoss()
 
-    loss_history = {x:np.zeros(num_epochs) for x in ['train','test']}
-
     for epoch in range(num_epochs):
-        epoch_file.write('Epoch {}/{}   ---   \n'.format(epoch+1, num_epochs))
 
+        epoch_file = open(epoch_fname, 'a')
+        epoch_file.write('Epoch {}/{}   ---   \n'.format(epoch+1, num_epochs))
+        epoch_file.close()
+ 
         # Each epoch has a training and validation phase
         for phase in ['train', 'test']:
             if phase == 'train':
@@ -285,14 +245,27 @@ def run_model(model, dataloaders, num_epochs):
             else:
                 model.eval()   # Set model to evaluate mode
 
+            epoch_start_time = time.time()
             running_loss = 0.0
             num_miss = 0
             cnt = 0
             samp = 0 
             # Iterate over data.
-            for batch in dataloaders[phase]:
-                inputs = batch[0]
-                labels = batch[1]
+            (X, Y, batch_size) = dataloaders[phase]
+            num_batches = int(len(X)/batch_size)
+            over_flag = False # indicate if data are not evenly divided by batches            
+            if num_batches*batch_size < len(X):
+                over_flag = True
+            for b in range(num_batches+1):
+                if b == num_batches:
+                    if over_flag:
+                        inputs = torch.from_numpy(X[batch_size*b:]).to(device)
+                        labels = torch.from_numpy(Y[batch_size*b:]).to(device)
+                    else:
+                        continue
+                else:
+                    inputs = torch.from_numpy(X[batch_size*b:batch_size*(b+1)]).to(device)
+                    labels = torch.from_numpy(Y[batch_size*b:batch_size*(b+1)]).to(device)
                 cnt += 1
                 samp += inputs.size(0)
 
@@ -314,28 +287,27 @@ def run_model(model, dataloaders, num_epochs):
                     if phase == 'test':
                         yhat = torch.argmax(outputs, dim=1).detach().cpu().numpy().reshape(-1, 1)
                         labels = labels.detach().cpu().numpy().reshape(-1, 1)
-                        num_miss += np.sum(abs(yhat-labels)).item()
+                        num_miss += np.sum(yhat!=labels).item()
                         err_perc = num_miss/samp*100
                          
                 if time.time()-prev_time >= 60:
                     mins += 1
+                    short_file = open(short_fname, 'a')
                     if phase == 'train':
                         short_file.write('[{0}] {1} minute(s): loss = {2:.5f}\n'.format(phase,
                         mins, avg_loss))
                     if phase == 'test':
                         short_file.write('[{0}] {1} minute(s): error % = {2:.5f}\n'.format(
                         phase, mins, err_perc))
+                    short_file.close()
                     prev_time = time.time()
                            
             if phase == 'train':
                 epoch_loss = avg_loss
             if phase == 'test':
                 epoch_loss = err_perc
-            loss_history[phase][epoch] = epoch_loss
-
+            epoch_file = open(epoch_fname, 'a')
             epoch_file.write('[{0}] Loss: {1:.5f}\n'.format(phase, epoch_loss))
+            epoch_file.close()
+            print('*****[{0}] Time to complete epoch[{1}]: {2}'.format(phase, epoch, time.time()-epoch_start_time))
 
-    f.close(short_file)
-    f.close(epoch_file)
-    np.save('loss_history_train', loss_history[0])
-    np.save('loss_history_test', loss_history[1])

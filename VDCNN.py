@@ -1,9 +1,12 @@
-from utils import Dataset, VDCNN
+from utils import VDCNN
 from utils import make_dataloader, run_model
 import torch.multiprocessing as mp
+import torch
 import argparse
 
 def main(args):
+    torch.manual_seed(0)
+
     train_fname = args.dataset_path + 'train.csv'
     test_fname = args.dataset_path + 'test.csv'
 
