@@ -105,7 +105,7 @@ class VDCNN(nn.Module):
         
     def forward(self, x):
 
-        x = self.embedding(x).trapnspose(1, 2)
+        x = self.embedding(x).transpose(1, 2)
         for unit in self.conv64_block:
             x = unit(x)
         x = self.pool_half(x)
