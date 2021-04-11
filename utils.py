@@ -127,7 +127,9 @@ class VDCNN(nn.Module):
         """
         if type(m) == nn.Linear:
             stdv = np.sqrt(2./m.weight.size(1))
-            m.weight.data.uniform_(-stdv, stdv)
+            # sqrt(3) scaling to account for uniform distribution variance 
+            m.weight.data.uniform_(-np.sqrt(3)*stdv,
+                                   np.sqrt(3)*stdv)
             if m.bias is not None:
                 m.bias.data.fill_(0)
 
@@ -136,9 +138,10 @@ class VDCNN(nn.Module):
             for k in m.kernel_size:
                 n *= k
             stdv = np.sqrt(2./n)
-            m.weight.data.uniform_(-stdv, stdv)
+            m.weight.data.uniform_(-np.sqrt(3)*stdv,
+                                    np.sqrt(3)*stdv)
             if m.bias is not None:
-                m.bias.data.uniform_(0)
+                m.bias.data.fill_(0)
     
     
 def make_data(train_fname, test_fname):
