@@ -120,9 +120,28 @@ class VDCNN(nn.Module):
         for unit in self.output_block:
             x = unit(x)
         return x
+
+    def init_weights(self, m):
+        """Use He initialization for conv and linear layers that have ReLU rectfier
+           afterward.
+        """
+        if type(m) == nn.Linear:
+            stdv = np.sqrt(2./m.weight.size(1))
+            m.weight.data.uniform_(-stdv, stdv)
+            if m.bias is not None:
+                m.bias.data.fill_(0)
+
+        elif type(m) == nn.Conv1d:
+            n = m.in_channels
+            for k in m.kernel_size:
+                n *= k
+            stdv = np.sqrt(2./n)
+            m.weight.data.uniform_(-stdv, stdv)
+            if m.bias is not None:
+                m.bias.data.uniform_(0)
     
     
-def make_data(train_fname, test_fname, use_oldfile=False):
+def make_data(train_fname, test_fname):
     """
     Preprocess Yelp_review_polarity dataset and make them available for the model
     to train on. The output is numpy array
@@ -130,77 +149,53 @@ def make_data(train_fname, test_fname, use_oldfile=False):
     dataset_name = train_fname.split('/')[3]
 
     # make train and test data
-    if (os.path.exists('train_X.npy') and os.path.exists('train_Y.npy') and
-        os.path.exists('test_X.npy') and os.path.exists('test_Y.npy') and use_oldfile):
-        train_X = np.load('train_X.npy')
-        train_Y = np.load('train_Y.npy')
-        test_X = np.load('test_X.npy')
-        test_Y = np.load('test_Y.npy')
-    else:
-        train_df = pd.read_csv(train_fname, header=None)
-        test_df = pd.read_csv(test_fname, header=None)
-        lookup_table = {}
-        chrs = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'"+'"/\|_@#$%^&*~`+-=<>()[]{} '
-        for i, c in enumerate(chrs):
-            lookup_table[c] = i+1 # reserve 0 as padding
-        train_X = np.zeros([len(train_df), 1024]).astype(int)
-        test_X = np.zeros([len(test_df), 1024]).astype(int)
+    train_df = pd.read_csv(train_fname, header=None)
+    test_df = pd.read_csv(test_fname, header=None)
+    lookup_table = {}
+    chrs = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'"+'"/\|_@#$%^&*~`+-=<>()[]{} '
+    for i, c in enumerate(chrs):
+        lookup_table[c] = i+1 # reserve 0 as padding
+    train_X = np.zeros([len(train_df), 1024]).astype(int)
+    test_X = np.zeros([len(test_df), 1024]).astype(int)
 
-        if dataset_name == 'yelp_review_polarity_csv':
-            for i, s in enumerate(train_df.loc[:, 1]):
-                for j, c in enumerate(s.lower()):
-                    train_X[i, j] = lookup_table[c]
-                    if j == 1023:
-                        break
-            for i, s in enumerate(test_df.loc[:, 1]):
-                for j, c in enumerate(s.lower()):
-                    test_X[i, j] = lookup_table[c]
-                    if j == 1023:
-                        break
+    label_col = 0
+    if dataset_name == 'yelp_review_polarity_csv':
+        data_col = 1
+    elif dataset_name == 'yahoo_answers_csv':
+        data_col = 3 
 
-            train_Y = np.array(train_df.loc[:, 0]) - 1 
-            test_Y = np.array(test_df.loc[:, 0]) - 1 
+    for i, s in enumerate(train_df.loc[:, data_col]):
+        for j, c in enumerate(str(s).lower()):
+            if c not in lookup_table.keys():
+                train_X[i, j] = 0
+            else:
+                train_X[i, j] = lookup_table[c]
+            if j == 1023:
+                break
+    for i, s in enumerate(test_df.loc[:, data_col]):
+        for j, c in enumerate(str(s).lower()):
+            if c not in lookup_table.keys():
+                test_X[i, j] = 0
+            else:
+                test_X[i, j] = lookup_table[c]
+            if j == 1023:
+                break
 
-        elif dataset_name == 'yahoo_answers_csv':
-            for i, s in enumerate(train_df.loc[:, 3]):
-                for j, c in enumerate(str(s).lower()):
-                    if c not in lookup_table.keys():
-                        train_X[i, j] = 0
-                    else:
-                        train_X[i, j] = lookup_table[c]
-                    if j == 1023:
-                        break
-            for i, s in enumerate(test_df.loc[:, 3]):
-                for j, c in enumerate(str(s).lower()):
-                    if c not in lookup_table.keys():
-                        test_X[i, j] = 0
-                    else:
-                        test_X[i, j] = lookup_table[c]
-                    if j == 1023:
-                        break
+    train_Y = np.array(train_df.loc[:, label_col]) - 1 
+    test_Y = np.array(test_df.loc[:, label_col]) - 1 
 
-            train_Y = np.array(train_df.loc[:, 0]) - 1 
-            test_Y = np.array(test_df.loc[:, 0]) - 1 
-
-
-    if (~(os.path.exists('train_X.npy') and os.path.exists('train_Y.npy') and
-        os.path.exists('test_X.npy') and os.path.exists('test_Y.npy')) and use_oldfile):
-        np.save('train_X', train_X)
-        np.save('train_Y', train_Y)
-        np.save('test_X', test_X)
-        np.save('test_Y', test_Y)
     
     return train_X, train_Y, test_X, test_Y
 
 
-def make_dataloader(train_fname, test_fname, batch_size=128, use_oldfile=False):
+def make_dataloader(train_fname, test_fname, batch_size=128):
     """
     Create a dataloader which is conveniently designed for pytorch batch 
     iteration.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    train_X, train_Y, test_X, test_Y = make_data(train_fname, test_fname, use_oldfile)
+    train_X, train_Y, test_X, test_Y = make_data(train_fname, test_fname)
 
     dataloaders = {
         'train': (train_X, train_Y, batch_size),
@@ -219,6 +214,9 @@ def run_model(model, dataloaders, num_epochs):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = model.to(device)
+
+    # apply He initialization
+    model.apply(model.init_weights)
 
     epoch_fname = 'epoch_d{0}_nc{1}_ne{2}.log'.format(model.depth,
                    model.num_class, num_epochs)
