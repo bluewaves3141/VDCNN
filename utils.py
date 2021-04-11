@@ -44,7 +44,7 @@ class VDCNN(nn.Module):
         self.depth = depth
         self.num_class = num_class
         
-        self.embedding = nn.Embedding(71, 16)
+        self.embedding = nn.Embedding(73, 16)
         
         if depth == 9:
             num_blocks = [2, 2, 2, 2]
@@ -155,7 +155,7 @@ def make_data(train_fname, test_fname):
     train_df = pd.read_csv(train_fname, header=None)
     test_df = pd.read_csv(test_fname, header=None)
     lookup_table = {}
-    chrs = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'"+'"/\|_@#$%^&*~`+-=<>()[]{} '
+    chrs = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"\\/|_@#$%^&*~`+-=<>()[]{}\n "
     for i, c in enumerate(chrs):
         lookup_table[c] = i+1 # reserve 0 as padding
     train_X = np.zeros([len(train_df), 1024]).astype(int)
@@ -167,23 +167,22 @@ def make_data(train_fname, test_fname):
     elif dataset_name == 'yahoo_answers_csv':
         data_col = 3 
 
-    for i, s in enumerate(train_df.loc[:, data_col]):
-        for j, c in enumerate(str(s).lower()):
-            if c not in lookup_table.keys():
-                train_X[i, j] = 0
-            else:
-                train_X[i, j] = lookup_table[c]
-            if j == 1023:
-                break
-    for i, s in enumerate(test_df.loc[:, data_col]):
-        for j, c in enumerate(str(s).lower()):
-            if c not in lookup_table.keys():
-                test_X[i, j] = 0
-            else:
-                test_X[i, j] = lookup_table[c]
-            if j == 1023:
-                break
+    X = [train_X, test_X]
+    dfs = [train_df, test_df]
+    
+    # phase 0 = train / phase 1 = test
+    for phase in range(2):
+        for i, text in enumerate(dfs[phase].loc[:, data_col]):
+            for j, cc in enumerate(text):           
+                if cc not in lookup_table.keys():
+                    X[phase][i, j] = 0
+                else:
+                    X[phase][i, j] = lookup_table[cc]
+                # text longer than 1024 length
+                if j == 1023:
+                    break
 
+    # account for target label starting at 1
     train_Y = np.array(train_df.loc[:, label_col]) - 1 
     test_Y = np.array(test_df.loc[:, label_col]) - 1 
 
