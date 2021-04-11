@@ -210,7 +210,7 @@ def make_dataloader(train_fname, test_fname, batch_size=128):
 def run_model(model, dataloaders, num_epochs):
     """
     Train and test the model with a given number of epochs. The result is saved onto
-    3 log files.
+    2 log files.
     """
  
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -230,10 +230,9 @@ def run_model(model, dataloaders, num_epochs):
     mins = 0
     
     optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(reduction='sum')
 
     for epoch in range(num_epochs):
-
         epoch_file = open(epoch_fname, 'a')
         epoch_file.write('Epoch {}/{}   ---   \n'.format(epoch+1, num_epochs))
         epoch_file.close()
@@ -248,7 +247,6 @@ def run_model(model, dataloaders, num_epochs):
             epoch_start_time = time.time()
             running_loss = 0.0
             num_miss = 0
-            cnt = 0
             samp = 0 
             # Iterate over data.
             (X, Y, batch_size) = dataloaders[phase]
@@ -266,7 +264,6 @@ def run_model(model, dataloaders, num_epochs):
                 else:
                     inputs = torch.from_numpy(X[batch_size*b:batch_size*(b+1)]).to(device)
                     labels = torch.from_numpy(Y[batch_size*b:batch_size*(b+1)]).to(device)
-                cnt += 1
                 samp += inputs.size(0)
 
                 # zero the parameter gradients
@@ -280,10 +277,15 @@ def run_model(model, dataloaders, num_epochs):
                         loss = criterion(outputs, labels)
                         # backward + optimize only if in training phase
                         loss.backward()
+
+                        # added gradient clip to stabilize training
+                        clip_norm = 7.0 # from cjiang2 github
+                        nn.utils.clip_grad_norm(model.parameters(), clip_norm)
+
                         optimizer.step()
                         # statistics
                         running_loss += loss.item()
-                        avg_loss = running_loss/cnt
+                        avg_loss = running_loss/samp
                     if phase == 'test':
                         yhat = torch.argmax(outputs, dim=1).detach().cpu().numpy().reshape(-1, 1)
                         labels = labels.detach().cpu().numpy().reshape(-1, 1)
