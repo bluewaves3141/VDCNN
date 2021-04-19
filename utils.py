@@ -1,14 +1,18 @@
 import torch
 import torch.nn as nn
-import os, sys
+import sys
 import numpy as np
 import torch.optim as optim
 import pandas as pd
-import copy
 import time
 
 __all__ = ['Dataset', 'VDCNN', 'make_data',
            'make_dataloader', 'run_model']
+
+KERNEL_SIZE = 3
+EMBED_SIZE = 16
+PADDING  = 1
+MINUTE = 60
 
 class Flatten(nn.Module):
     def __init__(self):
@@ -31,9 +35,9 @@ class KMaxPooling(nn.Module):
         super(KMaxPooling, self).__init__()
         self.k = k
     def forward(self, x):
-        idxes = x.topk(self.k, dim=2)[1].sort(dim=0)[0]
-        return x.gather(2, idxes)
-
+        # idxes = x.topk(self.k, dim=2)[1].sort(dim=0)[0]
+        # return x.gather(2, idxes)
+        return x.topk(self.k)[0]
 
 class VDCNN(nn.Module):
     """
@@ -44,7 +48,7 @@ class VDCNN(nn.Module):
         self.depth = depth
         self.num_class = num_class
         
-        self.embedding = nn.Embedding(73, 16)
+        self.embedding = nn.Embedding(73, EMBED_SIZE)
         
         if depth == 9:
             num_blocks = [2, 2, 2, 2]
@@ -57,39 +61,39 @@ class VDCNN(nn.Module):
             sys.exit()
 
         self.conv64_block = nn.ModuleList()
-        self.conv64_block += [nn.Conv1d(16, 64, 3, padding=1)]
+        self.conv64_block += [nn.Conv1d(EMBED_SIZE, 64, KERNEL_SIZE, padding=PADDING)]
         for i in range(num_blocks[0]):
-            self.conv64_block += [nn.Conv1d(64, 64, 3, padding=1), 
-                                  nn.BatchNorm1d(64, affine=False),
+            self.conv64_block += [nn.Conv1d(64, 64, KERNEL_SIZE, padding=PADDING), 
+                                  nn.BatchNorm1d(64),
                                   nn.ReLU()]
 
-        self.pool_half = nn.MaxPool1d(3, stride=2, padding=1) 
+        self.pool_half = nn.MaxPool1d(KERNEL_SIZE, stride=2, padding=PADDING) 
         
         self.conv128_block = nn.ModuleList()
         for i in range(num_blocks[1]):
             if i == 0:
-                self.conv128_block += [nn.Conv1d(64, 128, 3, padding=1)]
+                self.conv128_block += [nn.Conv1d(64, 128, KERNEL_SIZE, padding=PADDING)]
             else:
-                self.conv128_block += [nn.Conv1d(128, 128, 3, padding=1)]
-            self.conv128_block += [nn.BatchNorm1d(128, affine=False),
+                self.conv128_block += [nn.Conv1d(128, 128, KERNEL_SIZE, padding=PADDING)]
+            self.conv128_block += [nn.BatchNorm1d(128),
                                    nn.ReLU()]   
         
         self.conv256_block = nn.ModuleList()
         for i in range(num_blocks[2]):
             if i == 0:
-                self.conv256_block += [nn.Conv1d(128, 256, 3, padding=1)]
+                self.conv256_block += [nn.Conv1d(128, 256, KERNEL_SIZE, padding=PADDING)]
             else:
-                self.conv256_block += [nn.Conv1d(256, 256, 3, padding=1)]
-            self.conv256_block += [nn.BatchNorm1d(256, affine=False),
+                self.conv256_block += [nn.Conv1d(256, 256, KERNEL_SIZE, padding=PADDING)]
+            self.conv256_block += [nn.BatchNorm1d(256),
                                    nn.ReLU()]
         
         self.conv512_block = nn.ModuleList()
         for i in range(num_blocks[3]):
             if i == 0:
-                self.conv512_block += [nn.Conv1d(256, 512, 3, padding=1)]
+                self.conv512_block += [nn.Conv1d(256, 512, KERNEL_SIZE, padding=PADDING)]
             else:
-                self.conv512_block += [nn.Conv1d(512, 512, 3, padding=1)]
-            self.conv512_block += [nn.BatchNorm1d(512, affine=False),
+                self.conv512_block += [nn.Conv1d(512, 512, KERNEL_SIZE, padding=PADDING)]
+            self.conv512_block += [nn.BatchNorm1d(512),
                                    nn.ReLU()]
         
         self.output_block = nn.ModuleList()
@@ -173,7 +177,7 @@ def make_data(train_fname, test_fname):
     # phase 0 = train / phase 1 = test
     for phase in range(2):
         for i, text in enumerate(dfs[phase].loc[:, data_col]):
-            for j, cc in enumerate(text):           
+            for j, cc in enumerate(str(text)):           
                 if cc not in lookup_table.keys():
                     X[phase][i, j] = 0
                 else:
@@ -250,7 +254,7 @@ def run_model(model, dataloaders, num_epochs):
             samp = 0 
             # Iterate over data.
             (X, Y, batch_size) = dataloaders[phase]
-            num_batches = int(len(X)/batch_size)
+            num_batches = len(X) // batch_size
             over_flag = False # indicate if data are not evenly divided by batches            
             if num_batches*batch_size < len(X):
                 over_flag = True
@@ -279,7 +283,7 @@ def run_model(model, dataloaders, num_epochs):
                         loss.backward()
 
                         # added gradient clip to stabilize training
-                        clip_norm = 7.0 # from cjiang2 github
+                        clip_norm = 3.0 # from cjiang2 github
                         nn.utils.clip_grad_norm(model.parameters(), clip_norm)
 
                         optimizer.step()
@@ -287,12 +291,11 @@ def run_model(model, dataloaders, num_epochs):
                         running_loss += loss.item()
                         avg_loss = running_loss/samp
                     if phase == 'test':
-                        yhat = torch.argmax(outputs, dim=1).detach().cpu().numpy().reshape(-1, 1)
-                        labels = labels.detach().cpu().numpy().reshape(-1, 1)
-                        num_miss += np.sum(yhat!=labels).item()
+                        yhat = torch.argmax(outputs, dim=1)
+                        num_miss += (~yhat.eq(labels)).sum().item()
                         err_perc = num_miss/samp*100
                          
-                if time.time()-prev_time >= 60:
+                if time.time()-prev_time >= MINUTE:
                     mins += 1
                     short_file = open(short_fname, 'a')
                     if phase == 'train':
@@ -312,4 +315,3 @@ def run_model(model, dataloaders, num_epochs):
             epoch_file.write('[{0}] Loss: {1:.5f}\n'.format(phase, epoch_loss))
             epoch_file.close()
             print('*****[{0}] Time to complete epoch[{1}]: {2}'.format(phase, epoch, time.time()-epoch_start_time))
-
