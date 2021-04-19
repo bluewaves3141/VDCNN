@@ -44,4 +44,5 @@ The computation time for each epoch is provided below:
 | 9      | 1429 seconds         | 4145 seconds  |
 | 17     | 2454 seconds         | 6698 seconds  |
 | 29     | 4652 seconds         | 12154 seconds |
+
 The VDCNN model was trained with a total of 15 epochs for each depth, except Yahoo Answer dataset with depth 29 --- only 9 epochs were used.
