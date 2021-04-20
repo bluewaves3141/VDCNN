@@ -64,7 +64,7 @@ class VDCNN(nn.Module):
         self.conv64_block += [nn.Conv1d(EMBED_SIZE, 64, KERNEL_SIZE, padding=PADDING)]
         for i in range(num_blocks[0]):
             self.conv64_block += [nn.Conv1d(64, 64, KERNEL_SIZE, padding=PADDING), 
-                                  nn.BatchNorm1d(64),
+                                  nn.BatchNorm1d(64, affine=False),
                                   nn.ReLU()]
 
         self.pool_half = nn.MaxPool1d(KERNEL_SIZE, stride=2, padding=PADDING) 
@@ -75,7 +75,7 @@ class VDCNN(nn.Module):
                 self.conv128_block += [nn.Conv1d(64, 128, KERNEL_SIZE, padding=PADDING)]
             else:
                 self.conv128_block += [nn.Conv1d(128, 128, KERNEL_SIZE, padding=PADDING)]
-            self.conv128_block += [nn.BatchNorm1d(128),
+            self.conv128_block += [nn.BatchNorm1d(128, affine=False),
                                    nn.ReLU()]   
         
         self.conv256_block = nn.ModuleList()
@@ -84,7 +84,7 @@ class VDCNN(nn.Module):
                 self.conv256_block += [nn.Conv1d(128, 256, KERNEL_SIZE, padding=PADDING)]
             else:
                 self.conv256_block += [nn.Conv1d(256, 256, KERNEL_SIZE, padding=PADDING)]
-            self.conv256_block += [nn.BatchNorm1d(256),
+            self.conv256_block += [nn.BatchNorm1d(256, affine=False),
                                    nn.ReLU()]
         
         self.conv512_block = nn.ModuleList()
@@ -93,7 +93,7 @@ class VDCNN(nn.Module):
                 self.conv512_block += [nn.Conv1d(256, 512, KERNEL_SIZE, padding=PADDING)]
             else:
                 self.conv512_block += [nn.Conv1d(512, 512, KERNEL_SIZE, padding=PADDING)]
-            self.conv512_block += [nn.BatchNorm1d(512),
+            self.conv512_block += [nn.BatchNorm1d(512, affine=False),
                                    nn.ReLU()]
         
         self.output_block = nn.ModuleList()
