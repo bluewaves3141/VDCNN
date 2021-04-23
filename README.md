@@ -1,6 +1,6 @@
 
 # VDCNN
-Reproduction code for [Very Deep Convolutional Networks for Text Classification](https://arxiv.org/pdf/1606.01781.pdf "VDCNN for Text Classification") by Alexis Conneau et al. 2017. Our VDCNN model was implemented using PyTorch, and it can be trained on either [Yelp Review Polarity dataset ](https://www.kaggle.com/irustandi/yelp-review-polarity/version/1 "Yelp Review Polarity dataset") or [Yahoo Answers dataset](https://www.kaggle.com/soumikrakshit/yahoo-answers-dataset "Yahoo Answers")  .
+Reproduction code for [Very Deep Convolutional Networks for Text Classification](https://arxiv.org/pdf/1606.01781.pdf "VDCNN for Text Classification") by Alexis Conneau et al. 2017. The VDCNN model was implemented using PyTorch, and it can be trained on either [Yelp Review Polarity dataset ](https://www.kaggle.com/irustandi/yelp-review-polarity/version/1 "Yelp Review Polarity dataset") or [Yahoo Answers dataset](https://www.kaggle.com/soumikrakshit/yahoo-answers-dataset "Yahoo Answers")  .
 
 # Prerequisites
 - Python3
@@ -23,17 +23,17 @@ Note: *num_class* must be 2 for the Yelp Review Polarity dataset and 10 for the 
 The testing errors for Yelp Polarity Review dataset are provided below:
 | Depths | Testing Error | Testing Error (paper) |
 |--------|---------------|-----------------------|
-| 9      | 5.96 %        | 4.88 %                |
-| 17     | 5.40 %        | 4.50 %                |
-| 29     | 5.43 %        | 4.28 %                |
+| 9      | 5.64 %        | 4.88 %                |
+| 17     | 5.48 %        | 4.50 %                |
+| 29     | 5.55 %        | 4.28 %                |
 
 
 The testing errors for Yahoo Answer dataset are provided below:
 | Depths | Testing Error | Testing Error (paper) |
 |--------|---------------|-----------------------|
-| 9      | 42.69 %       | 27.60 %               |
-| 17     | 42.23 %       | 27.51 %               |
-| 29     | 43.14 %       | 26.57 %               |
+| 9      | 30.01 %       | 27.60 %               |
+| 17     | 29.32 %       | 27.51 %               |
+| 29     | 30.01 %       | 26.57 %               |
 
 
 ## Computation Time
@@ -45,4 +45,4 @@ The computation time for each epoch is provided below:
 | 17     | 2454 seconds         | 6698 seconds  |
 | 29     | 4652 seconds         | 12154 seconds |
 
-The VDCNN model was trained with a total of 15 epochs for each depth, except Yahoo Answer dataset with depth 29 --- only 9 epochs were used.
+All experiments were trained for a total of 15 epochs and performed on a single NVIDIA GK110 GPU.

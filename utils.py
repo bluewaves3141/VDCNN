@@ -125,28 +125,6 @@ class VDCNN(nn.Module):
             x = unit(x)
         return x
 
-    def init_weights(self, m):
-        """Use He initialization for conv and linear layers that have ReLU rectfier
-           afterward.
-        """
-        if type(m) == nn.Linear:
-            stdv = np.sqrt(2./m.weight.size(1))
-            # sqrt(3) scaling to account for uniform distribution variance 
-            m.weight.data.uniform_(-np.sqrt(3)*stdv,
-                                   np.sqrt(3)*stdv)
-            if m.bias is not None:
-                m.bias.data.fill_(0)
-
-        elif type(m) == nn.Conv1d:
-            n = m.in_channels
-            for k in m.kernel_size:
-                n *= k
-            stdv = np.sqrt(2./n)
-            m.weight.data.uniform_(-np.sqrt(3)*stdv,
-                                    np.sqrt(3)*stdv)
-            if m.bias is not None:
-                m.bias.data.fill_(0)
-    
     
 def make_data(train_fname, test_fname):
     """
@@ -166,17 +144,18 @@ def make_data(train_fname, test_fname):
     test_X = np.zeros([len(test_df), 1024]).astype(int)
 
     label_col = 0
-    if dataset_name == 'yelp_review_polarity_csv':
-        data_col = 1
-    elif dataset_name == 'yahoo_answers_csv':
-        data_col = 3 
-
     X = [train_X, test_X]
     dfs = [train_df, test_df]
     
     # phase 0 = train / phase 1 = test
     for phase in range(2):
-        for i, text in enumerate(dfs[phase].loc[:, data_col]):
+        if dataset_name == 'yelp_review_polarity_csv':
+            texts = dfs[phase].loc[:, 1].astype(str)
+        elif dataset_name == 'yahoo_answers_csv':
+            texts = dfs[phase].loc[:, 1].astype(str) + \
+                    dfs[phase].loc[:, 2].astype(str) + \
+                    dfs[phase].loc[:, 3].astype(str)
+        for i, text in enumerate(texts):
             for j, cc in enumerate(str(text)):           
                 if cc not in lookup_table.keys():
                     X[phase][i, j] = 0
@@ -220,9 +199,6 @@ def run_model(model, dataloaders, num_epochs):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = model.to(device)
-
-    # apply He initialization
-    model.apply(model.init_weights)
 
     epoch_fname = 'epoch_d{0}_nc{1}_ne{2}.log'.format(model.depth,
                    model.num_class, num_epochs)
